@@ -1,0 +1,46 @@
+{
+  "name": "shakespeare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n renderer,desktop \"corepack pnpm --filter @shakespeare/renderer dev\" \"wait-on http://localhost:5173 && corepack pnpm --filter @shakespeare/desktop dev\"",
+    "build": "corepack pnpm --recursive --sort run build",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "corepack pnpm --recursive --sort run build && corepack pnpm --recursive --sort run typecheck",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
+    "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "audit": "corepack pnpm audit --audit-level=high"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.0",
+    "eslint": "^10.0.1",
+    "globals": "^17.3.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "app-builder-lib": "26.18.0",
+      "builder-util": "26.16.0",
+      "builder-util-runtime": "9.7.0",
+      "dmg-builder": "26.18.0",
+      "electron-builder-squirrel-windows": "26.18.0",
+      "tar": "^7.5.22"
+    }
+  }
+}

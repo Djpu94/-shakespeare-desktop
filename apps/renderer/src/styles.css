@@ -1,0 +1,506 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #29251f;
+  background: #f8f5ef;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #a56b42;
+  outline-offset: 2px;
+}
+
+.app-shell {
+  width: min(100%, 76rem);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 5vw, 4rem);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #e6dfd4;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: #786b59;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.header-project {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d8cabc;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  color: #594a3c;
+  background: #f1e9df;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.projects-home {
+  max-width: 54rem;
+  margin: 3.5rem auto;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.section-heading h2 {
+  margin-bottom: 0.4rem;
+  font-family: Georgia, serif;
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+.description,
+.settings-panel p {
+  color: #625b52;
+  line-height: 1.6;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 2.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+}
+
+.primary-button {
+  color: white;
+  background: #594a3c;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #40352c;
+}
+
+.secondary-button {
+  border-color: #cfc3b5;
+  color: #40382f;
+  background: #fffdfa;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #f1e9df;
+}
+
+.text-button {
+  border: 0;
+  padding: 0.55rem 0;
+  color: #594a3c;
+  background: transparent;
+  font-weight: 600;
+}
+
+.project-form,
+.settings-panel,
+.project-card {
+  border: 1px solid #e2d9cd;
+  border-radius: 0.7rem;
+  background: #fffdfa;
+}
+
+.project-form {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+}
+
+label {
+  display: grid;
+  gap: 0.4rem;
+  color: #40382f;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #cfc3b5;
+  border-radius: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  color: #29251f;
+  background: white;
+}
+
+.project-form .primary-button {
+  justify-self: start;
+}
+
+.project-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+.project-card h3 {
+  margin-bottom: 0.55rem;
+  font-size: 1.05rem;
+}
+
+.empty-state,
+.sidebar-empty {
+  border: 1px dashed #cfc3b5;
+  border-radius: 0.65rem;
+  padding: 1.5rem;
+  color: #625b52;
+  text-align: center;
+}
+
+.workspace {
+  margin-top: 1.5rem;
+}
+
+.workspace-toolbar,
+.toolbar-actions,
+.editor-footer,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.toolbar-actions {
+  justify-content: flex-end;
+}
+
+.settings-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1rem;
+}
+
+.settings-panel > div {
+  flex: 1;
+}
+
+.settings-panel h2 {
+  margin-bottom: 0.3rem;
+  font-size: 1rem;
+}
+
+.settings-panel p {
+  margin-bottom: 0;
+  font-size: 0.88rem;
+}
+
+.settings-panel label {
+  min-width: 10rem;
+}
+
+.workspace-layout {
+  display: grid;
+  min-height: 65vh;
+  grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid #e2d9cd;
+  border-radius: 0.7rem;
+  background: #fffdfa;
+}
+
+.sidebar {
+  padding: 1rem;
+  border-right: 1px solid #e6dfd4;
+  background: #f3eee6;
+}
+
+.sidebar h2 {
+  margin: 1.3rem 0 0.6rem;
+  color: #786b59;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section-nav {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.nav-item,
+.binder-item {
+  width: 100%;
+  border: 0;
+  border-radius: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  color: #40382f;
+  background: transparent;
+  text-align: left;
+}
+
+.nav-item:hover,
+.binder-item:hover {
+  background: #e9dfd2;
+}
+
+.nav-item.is-active,
+.binder-item.is-active {
+  color: #fff;
+  background: #594a3c;
+}
+
+.binder-list {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.binder-folder {
+  display: block;
+  padding: 0.45rem 0.65rem;
+  color: #625b52;
+  font-weight: 600;
+}
+
+.sidebar-empty {
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.add-node-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dfd5c8;
+}
+
+.add-node-form label {
+  font-size: 0.8rem;
+}
+
+.add-node-form input,
+.add-node-form select {
+  padding: 0.5rem;
+}
+
+.add-node-form .secondary-button {
+  padding: 0.55rem;
+  font-size: 0.82rem;
+}
+
+.editor-area {
+  min-width: 0;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.editor {
+  display: grid;
+  min-height: 55vh;
+  grid-template-rows: auto minmax(20rem, 1fr) auto;
+  gap: 1rem;
+}
+
+.editor-title {
+  font-family: Georgia, serif;
+  font-size: 1.5rem;
+}
+
+.editor textarea {
+  min-height: 20rem;
+  resize: vertical;
+  border-color: transparent;
+  padding: 0;
+  font-family: Georgia, serif;
+  font-size: 1.08rem;
+  line-height: 1.8;
+}
+
+.editor textarea:focus-visible {
+  border-color: #cfc3b5;
+  outline-offset: 4px;
+}
+
+.editor-footer {
+  color: #786b59;
+  font-size: 0.82rem;
+}
+
+.empty-editor,
+.coming-soon {
+  display: grid;
+  min-height: 50vh;
+  align-content: center;
+  justify-items: center;
+  color: #625b52;
+  text-align: center;
+}
+
+.empty-editor h2,
+.coming-soon h2 {
+  margin-bottom: 0.5rem;
+  color: #29251f;
+  font-family: Georgia, serif;
+  font-size: 1.8rem;
+  font-weight: 500;
+}
+
+.coming-soon {
+  max-width: 36rem;
+  margin: auto;
+}
+
+.coming-soon .eyebrow {
+  color: #786b59;
+}
+
+.error-message {
+  margin: 1rem 0 0;
+  border: 1px solid #c56b5b;
+  border-radius: 0.45rem;
+  padding: 0.75rem 1rem;
+  color: #7b2e21;
+  background: #fff0ed;
+}
+
+dialog {
+  width: min(32rem, calc(100% - 2rem));
+  border: 1px solid #d8cabc;
+  border-radius: 0.7rem;
+  padding: 0;
+  color: #29251f;
+  background: #fffdfa;
+  box-shadow: 0 1.5rem 5rem #29251f40;
+}
+
+dialog::backdrop {
+  background: #29251f80;
+}
+
+.dialog-content {
+  padding: 1.5rem;
+}
+
+.dialog-content h2 {
+  font-family: Georgia, serif;
+  font-size: 1.4rem;
+  font-weight: 500;
+}
+
+.dialog-content p {
+  color: #625b52;
+  line-height: 1.6;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 700px) {
+  .app-header,
+  .section-heading,
+  .project-card,
+  .settings-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #e6dfd4;
+  }
+}
