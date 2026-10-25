@@ -1,0 +1,42 @@
+name: QA build
+
+on:
+  push:
+    branches: [qa]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-build:
+    name: Build QA installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: Run checks
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pnpm format:check
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm test:integration
+          pnpm audit --audit-level=high
+      - name: Build and package
+        run: |
+          pnpm build
+          pnpm --filter @shakespeare/desktop package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-${{ runner.os }}
+          path: apps/desktop/release/
+          if-no-files-found: error
+          retention-days: 30
