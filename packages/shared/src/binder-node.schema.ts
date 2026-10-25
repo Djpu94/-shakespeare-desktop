@@ -1,7 +1,17 @@
 import { z } from "zod";
 import { ProjectIdSchema } from "./project.schema.js";
+import { RichTextContentStringSchema } from "./rich-text.schema.js";
 
 export const BinderNodeIdSchema = z.uuid();
+
+/**
+ * Document bodies use the versioned rich-text contract. `BinderNodeSchema`
+ * still accepts any string so documents written by earlier versions (plain
+ * text) remain readable; every write that crosses the IPC boundary is
+ * validated with this schema instead.
+ */
+export const BinderContentInputSchema = RichTextContentStringSchema.nullable();
+export const BinderContentStringSchema = RichTextContentStringSchema;
 export const BinderNodeKindSchema = z.enum([
   "folder",
   "scene",
@@ -35,7 +45,7 @@ export const CreateBinderNodeSchema = z
     parentId: BinderNodeIdSchema.nullable(),
     kind: BinderNodeKindSchema,
     title: z.string().trim().min(1).max(200),
-    content: z.string().nullable(),
+    content: BinderContentInputSchema,
     metadata: NodeMetadataSchema,
   })
   .strict()
@@ -45,7 +55,7 @@ export const UpdateBinderNodeSchema = z
   .object({
     nodeId: BinderNodeIdSchema,
     title: z.string().trim().min(1).max(200).optional(),
-    content: z.string().nullable().optional(),
+    content: BinderContentInputSchema.optional(),
     metadata: NodeMetadataSchema.optional(),
   })
   .strict()

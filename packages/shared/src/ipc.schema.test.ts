@@ -3,7 +3,15 @@ import {
   AppHealthRequestSchema,
   AppHealthResponseSchema,
   ApplicationErrorSchema,
+  FlushBinderContentRequestSchema,
 } from "./ipc.schema.js";
+import { UpdateBinderNodeSchema } from "./binder-node.schema.js";
+import {
+  createEmptyRichTextDocument,
+  serializeRichTextContent,
+} from "./rich-text.schema.js";
+
+const NODE_ID = "b3b8b31d-86c0-4b16-b95a-71730ef4a0ef";
 
 describe("app health IPC contract", () => {
   it("accepts the request and a successful health response", () => {
@@ -37,6 +45,31 @@ describe("app health IPC contract", () => {
       ApplicationErrorSchema.parse({
         code: "internal error",
         message: "Database password is invalid",
+      }),
+    ).toThrow();
+  });
+
+  it("only accepts serialized rich-text documents on content writes", () => {
+    const content = serializeRichTextContent(createEmptyRichTextDocument());
+
+    expect(UpdateBinderNodeSchema.parse({ nodeId: NODE_ID, content })).toEqual({
+      nodeId: NODE_ID,
+      content,
+    });
+    expect(() =>
+      UpdateBinderNodeSchema.parse({
+        nodeId: NODE_ID,
+        content: "<p>arbitrary HTML</p>",
+      }),
+    ).toThrow();
+
+    expect(
+      FlushBinderContentRequestSchema.parse({ nodeId: NODE_ID, content }),
+    ).toEqual({ nodeId: NODE_ID, content });
+    expect(() =>
+      FlushBinderContentRequestSchema.parse({
+        nodeId: NODE_ID,
+        content: "plain text",
       }),
     ).toThrow();
   });

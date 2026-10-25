@@ -17,6 +17,7 @@ import {
   CreateBinderNodeSchema,
   CreateProjectSchema,
   EmptyRequestSchema,
+  FlushBinderContentRequestSchema,
   IPC_CHANNELS,
   MoveBinderNodeSchema,
   ProjectListSchema,
@@ -26,11 +27,69 @@ import {
   UpdateProjectSchema,
   VoidResponseSchema,
 } from "@shakespeare/shared";
+import type { IpcResult } from "@shakespeare/shared";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 
 interface RuntimeSchema<Output> {
   parse(input: unknown): Output;
+}
+
+function executeIpcCall<Request, Response>(
+  channel: string,
+  requestSchema: RuntimeSchema<Request>,
+  responseSchema: RuntimeSchema<Response>,
+  operation: (request: Request) => Response,
+  input: unknown,
+): IpcResult<Response> {
+  let request: Request;
+  try {
+    request = requestSchema.parse(input);
+  } catch {
+    return {
+      ok: false,
+      error: ApplicationErrorSchema.parse({
+        code: "VALIDATION_ERROR",
+        message: "The request is invalid.",
+      }),
+    };
+  }
+
+  try {
+    return {
+      ok: true,
+      value: responseSchema.parse(operation(request)),
+    };
+  } catch (error) {
+    if (error instanceof ApplicationError) {
+      return {
+        ok: false,
+        error: ApplicationErrorSchema.parse({
+          code: error.code,
+          message:
+            error.code === "INTERNAL_ERROR"
+              ? "An unexpected error occurred."
+              : error.message,
+        }),
+      };
+    }
+
+    process.stderr.write(
+      `${JSON.stringify({
+        level: "error",
+        event: "ipc.unexpected_error",
+        channel,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      })}\n`,
+    );
+    return {
+      ok: false,
+      error: ApplicationErrorSchema.parse({
+        code: "INTERNAL_ERROR",
+        message: "An unexpected error occurred.",
+      }),
+    };
+  }
 }
 
 function handleIpc<Request, Response>(
@@ -39,55 +98,30 @@ function handleIpc<Request, Response>(
   responseSchema: RuntimeSchema<Response>,
   operation: (request: Request) => Response,
 ): void {
-  ipcMain.handle(channel, (_event, input: unknown) => {
-    let request: Request;
-    try {
-      request = requestSchema.parse(input);
-    } catch {
-      return {
-        ok: false,
-        error: ApplicationErrorSchema.parse({
-          code: "VALIDATION_ERROR",
-          message: "The request is invalid.",
-        }),
-      };
-    }
+  ipcMain.handle(channel, (_event, input: unknown) =>
+    executeIpcCall(channel, requestSchema, responseSchema, operation, input),
+  );
+}
 
-    try {
-      return {
-        ok: true,
-        value: responseSchema.parse(operation(request)),
-      };
-    } catch (error) {
-      if (error instanceof ApplicationError) {
-        return {
-          ok: false,
-          error: ApplicationErrorSchema.parse({
-            code: error.code,
-            message:
-              error.code === "INTERNAL_ERROR"
-                ? "An unexpected error occurred."
-                : error.message,
-          }),
-        };
-      }
-
-      process.stderr.write(
-        `${JSON.stringify({
-          level: "error",
-          event: "ipc.unexpected_error",
-          channel,
-          errorName: error instanceof Error ? error.name : "UnknownError",
-        })}\n`,
-      );
-      return {
-        ok: false,
-        error: ApplicationErrorSchema.parse({
-          code: "INTERNAL_ERROR",
-          message: "An unexpected error occurred.",
-        }),
-      };
-    }
+/**
+ * Synchronous IPC used only by the renderer `beforeunload` path. SQLite writes
+ * are synchronous, so returning the result through `event.returnValue` lets the
+ * window close only after the pending document is safely persisted.
+ */
+function handleSyncIpc<Request, Response>(
+  channel: string,
+  requestSchema: RuntimeSchema<Request>,
+  responseSchema: RuntimeSchema<Response>,
+  operation: (request: Request) => Response,
+): void {
+  ipcMain.on(channel, (event, input: unknown) => {
+    event.returnValue = executeIpcCall(
+      channel,
+      requestSchema,
+      responseSchema,
+      operation,
+      input,
+    );
   });
 }
 
@@ -160,6 +194,12 @@ function registerIpcHandlers(
     MoveBinderNodeSchema,
     BinderNodeSchema,
     (input) => binderNodeRepository.move(input),
+  );
+  handleSyncIpc(
+    IPC_CHANNELS.flushBinderContent,
+    FlushBinderContentRequestSchema,
+    BinderNodeSchema,
+    ({ nodeId, content }) => binderNodeRepository.update({ nodeId, content }),
   );
 }
 

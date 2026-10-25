@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  type BinderNode,
   type IPC_CHANNELS,
   type IpcResult,
   type ShakespeareApi,
@@ -17,6 +18,7 @@ const channels = {
   updateBinderNode: "binder-node:update",
   deleteBinderNode: "binder-node:delete",
   moveBinderNode: "binder-node:move",
+  flushBinderContent: "binder-node:flush-content",
 } satisfies typeof IPC_CHANNELS;
 
 function invoke<Response>(
@@ -39,6 +41,11 @@ const shakespeareApi: ShakespeareApi = {
   updateBinderNode: (input) => invoke(channels.updateBinderNode, input),
   deleteBinderNode: (nodeId) => invoke(channels.deleteBinderNode, { nodeId }),
   moveBinderNode: (input) => invoke(channels.moveBinderNode, input),
+  flushBinderContent: (input) =>
+    ipcRenderer.sendSync(
+      channels.flushBinderContent,
+      input,
+    ) as IpcResult<BinderNode>,
 };
 
 contextBridge.exposeInMainWorld("shakespeare", shakespeareApi);

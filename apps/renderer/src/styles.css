@@ -783,14 +783,13 @@ textarea {
 
 .editor {
   display: grid;
+  gap: 0.85rem;
   min-height: 55vh;
-  grid-template-rows: auto minmax(20rem, 1fr) auto;
-  gap: 1rem;
 }
 
 .editor-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
 }
@@ -800,28 +799,352 @@ textarea {
 }
 
 .editor-title {
+  margin: 0;
   font-family: Georgia, serif;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
+  font-weight: 500;
 }
 
-.editor textarea {
-  min-height: 20rem;
-  resize: vertical;
-  border-color: transparent;
-  padding: 0;
+.editor-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.editor-bar-toggle,
+.editor-save-button,
+.editor-zoom-button {
+  min-height: 2.2rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.editor-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.editor-zoom-value {
+  min-width: 3.4rem;
+  color: #594a3c;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+
+.editor-zoom-reset {
+  font-size: 0.78rem;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border: 1px solid #e2d9cd;
+  border-radius: 0.55rem;
+  padding: 0.35rem;
+  background: #f7f1e8;
+}
+
+.editor-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.editor-toolbar-divider {
+  width: 1px;
+  height: 1.4rem;
+  margin: 0 0.2rem;
+  background: #d8cabc;
+}
+
+.editor-tool {
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  color: #40382f;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.editor-tool:hover {
+  background: #e9dfd2;
+}
+
+.editor-tool.is-active {
+  color: #fff;
+  background: #594a3c;
+}
+
+.editor-tool.is-active:hover {
+  background: #4b3e32;
+}
+
+.editor-shortcuts {
+  margin: 0;
+  color: #786b59;
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.editor-reading-column {
+  width: min(100%, 42rem);
+  margin: 0 auto;
+}
+
+.editor-reading-column--compact {
+  width: min(100%, 40rem);
+}
+
+.editor-surface {
+  position: relative;
+  min-height: 22rem;
+  padding: 0.5rem 0.25rem 1.5rem;
+  border-radius: 0.3rem;
   font-family: Georgia, serif;
   font-size: 1.08rem;
   line-height: 1.8;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
-.editor textarea:focus-visible {
-  border-color: #cfc3b5;
+.editor-surface:focus-visible {
+  outline: 3px solid #a56b42;
   outline-offset: 4px;
 }
 
+.editor-surface[data-empty="true"]::before {
+  position: absolute;
+  color: #9c8a75;
+  content: attr(data-placeholder);
+  font-family: Georgia, serif;
+  font-style: italic;
+  pointer-events: none;
+}
+
+.editor-surface p {
+  margin: 0 0 0.8em;
+}
+
+.editor-surface h1,
+.editor-surface h2,
+.editor-surface h3 {
+  margin: 0.9em 0 0.45em;
+  font-family: Georgia, serif;
+  line-height: 1.25;
+}
+
+.editor-surface h1 {
+  font-size: 1.8em;
+}
+
+.editor-surface h2 {
+  font-size: 1.45em;
+}
+
+.editor-surface h3 {
+  font-size: 1.2em;
+}
+
+.editor-surface ul,
+.editor-surface ol {
+  margin: 0.25em 0 1em;
+  padding-left: 1.6em;
+}
+
+.editor-surface li {
+  margin: 0.25em 0;
+}
+
+.editor-surface blockquote {
+  margin: 0.5em 0 1em;
+  border-left: 3px solid #c9b49c;
+  padding-left: 1rem;
+  color: #594a3c;
+  font-style: italic;
+}
+
+.editor-surface pre {
+  margin: 0.5em 0 1em;
+  overflow-x: auto;
+  border: 1px solid #e2d9cd;
+  border-radius: 0.45rem;
+  padding: 0.75rem 0.9rem;
+  background: #f3eee6;
+  font-family:
+    "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.editor-surface code {
+  border-radius: 0.25rem;
+  padding: 0.05em 0.25em;
+  background: #efe6da;
+  font-family:
+    "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.editor-surface pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.editor-surface strong {
+  font-weight: 700;
+}
+
 .editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid #e6dfd4;
+  padding-top: 0.65rem;
   color: #786b59;
   font-size: 0.82rem;
+}
+
+.editor-save-status {
+  font-weight: 600;
+}
+
+.editor-save-status--saved {
+  color: #2f6f52;
+}
+
+.editor-save-status--pending {
+  color: #8a5a2b;
+}
+
+.editor-save-status--saving {
+  color: #2f5d8a;
+}
+
+.editor-save-status--error {
+  color: #8c2f22;
+}
+
+.editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #c56b5b;
+  border-radius: 0.45rem;
+  padding: 0.6rem 0.8rem;
+  color: #7b2e21;
+  background: #fff0ed;
+  font-size: 0.82rem;
+}
+
+.editor-error p {
+  margin: 0;
+}
+
+.editor-error .secondary-button {
+  flex: none;
+  min-height: 2rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.editor-error + .error-message {
+  margin-top: 0.5rem;
+}
+
+.folder-overview-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.folder-overview-actions .description {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.scrivenings {
+  display: grid;
+  gap: 1rem;
+}
+
+.scrivenings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.scrivenings-header h2 {
+  margin: 0 0 0.4rem;
+  font-family: Georgia, serif;
+  font-size: 1.7rem;
+  font-weight: 500;
+}
+
+.scrivenings-header .description {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.scrivenings-summary {
+  margin: 0;
+  color: #625b52;
+  font-size: 0.8rem;
+}
+
+.scrivenings-notice {
+  margin: 0;
+  border: 1px solid #d8cabc;
+  border-radius: 0.45rem;
+  padding: 0.6rem 0.8rem;
+  color: #594a3c;
+  background: #f7f1e8;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.scrivenings-segments {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.scrivenings-segment {
+  border-top: 1px solid #e2d9cd;
+  padding-top: 1.1rem;
+}
+
+.scrivenings-segment-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.scrivenings-segment-header h3 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.scrivenings-segment-footer {
+  margin: 0.25rem 0 0;
+  color: #786b59;
+  font-size: 0.76rem;
 }
 
 .empty-editor,
@@ -967,6 +1290,21 @@ dialog::backdrop {
   .workspace-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .editor-toolbar-row,
+  .scrivenings-header,
+  .editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .editor-zoom {
+    flex-wrap: wrap;
+  }
+
+  .editor-toolbar-group {
+    flex-wrap: wrap;
   }
 
   .toolbar-actions {
