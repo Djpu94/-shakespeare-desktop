@@ -53,10 +53,10 @@ export class SqliteBinderNodeRepository implements BinderNodeRepository {
         this.ensureProjectExists(input.projectId);
         this.ensureParentIsFolder(input.parentId, input.projectId);
 
-        const position = this.getSiblingIds(
+        const position = this.getNextSiblingPosition(
           input.projectId,
           input.parentId,
-        ).length;
+        );
         const timestamp = new Date().toISOString();
         const row: BinderNodeRow = {
           id: randomUUID(),
@@ -145,13 +145,19 @@ export class SqliteBinderNodeRepository implements BinderNodeRepository {
   }
 
   delete(nodeId: string): void {
-    const result = this.database
-      .prepare("DELETE FROM binder_nodes WHERE id = ?")
-      .run(nodeId);
+    this.database
+      .transaction(() => {
+        const node = this.findById(nodeId);
+        if (node === undefined) {
+          throw new ApplicationError("NOT_FOUND", "Binder node was not found.");
+        }
 
-    if (result.changes === 0) {
-      throw new ApplicationError("NOT_FOUND", "Binder node was not found.");
-    }
+        this.database
+          .prepare("DELETE FROM binder_nodes WHERE id = ?")
+          .run(nodeId);
+        this.reindexSiblings(node.projectId, node.parentId);
+      })
+      .immediate();
   }
 
   move(input: MoveBinderNodeInput): BinderNode {
@@ -298,5 +304,44 @@ export class SqliteBinderNodeRepository implements BinderNodeRepository {
       .all(projectId, parentId) as Array<{ id: string }>;
 
     return rows.map((row) => row.id);
+  }
+
+  private getNextSiblingPosition(
+    projectId: string,
+    parentId: string | null,
+  ): number {
+    const row = this.database
+      .prepare(
+        `SELECT COALESCE(MAX(sort_order), -1) AS max_position
+         FROM binder_nodes
+         WHERE project_id = ? AND parent_id IS ?`,
+      )
+      .get(projectId, parentId) as { max_position: number };
+
+    return row.max_position + 1;
+  }
+
+  private reindexSiblings(projectId: string, parentId: string | null): void {
+    const siblingIds = this.getSiblingIds(projectId, parentId);
+    if (siblingIds.length === 0) {
+      return;
+    }
+
+    const maxPosition = this.database
+      .prepare(
+        "SELECT COALESCE(MAX(sort_order), 0) AS max_position FROM binder_nodes WHERE project_id = ?",
+      )
+      .get(projectId) as { max_position: number };
+    const stagingOffset = maxPosition.max_position + siblingIds.length + 1;
+    const updatePosition = this.database.prepare(
+      "UPDATE binder_nodes SET sort_order = ? WHERE id = ?",
+    );
+
+    siblingIds.forEach((id, index) => {
+      updatePosition.run(stagingOffset + index, id);
+    });
+    siblingIds.forEach((id, index) => {
+      updatePosition.run(index, id);
+    });
   }
 }

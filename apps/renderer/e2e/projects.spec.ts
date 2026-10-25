@@ -1,120 +1,10 @@
 import { expect, test } from "@playwright/test";
-import type { BinderNode, Project, ShakespeareApi } from "@shakespeare/shared";
+import { installShakespeareMock } from "./support/shakespeare-mock.js";
 
 test("creates projects, changes mode accessibly, and keeps manuscript content", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    const projects: Project[] = [];
-    const nodes: BinderNode[] = [];
-    const now = "2026-10-24T00:00:00.000Z";
-    const api: ShakespeareApi = {
-      getAppHealth: async () => ({
-        ok: true,
-        value: { status: "ok", appVersion: "0.1.0" },
-      }),
-      createProject: async (input) => {
-        const project: Project = {
-          id: "7bd4e807-37e7-44ba-b9b8-7397e30c0001",
-          name: input.name,
-          mode: input.mode,
-          createdAt: now,
-          updatedAt: now,
-        };
-        projects.push(project);
-        return { ok: true, value: project };
-      },
-      getProject: async (projectId) => ({
-        ok: true,
-        value: projects.find((project) => project.id === projectId) ?? null,
-      }),
-      listProjects: async () => ({ ok: true, value: [...projects] }),
-      updateProject: async (input) => {
-        const project = projects.find((item) => item.id === input.projectId);
-        if (project === undefined) {
-          return {
-            ok: false,
-            error: { code: "NOT_FOUND", message: "Project was not found." },
-          };
-        }
-        const updated: Project = {
-          ...project,
-          ...(input.mode === undefined ? {} : { mode: input.mode }),
-          ...(input.name === undefined ? {} : { name: input.name }),
-          updatedAt: now,
-        };
-        projects[projects.indexOf(project)] = updated;
-        return { ok: true, value: updated };
-      },
-      deleteProject: async (projectId) => {
-        const projectIndex = projects.findIndex(
-          (project) => project.id === projectId,
-        );
-        if (projectIndex !== -1) {
-          projects.splice(projectIndex, 1);
-        }
-        return { ok: true, value: undefined };
-      },
-      createBinderNode: async (input) => {
-        const node: BinderNode = {
-          id: crypto.randomUUID(),
-          projectId: input.projectId,
-          parentId: input.parentId,
-          kind: input.kind,
-          title: input.title,
-          position: nodes.length,
-          content: input.content,
-          metadata: input.metadata,
-          createdAt: now,
-          updatedAt: now,
-        };
-        nodes.push(node);
-        return { ok: true, value: node };
-      },
-      listBinderNodes: async (projectId) => ({
-        ok: true,
-        value: nodes.filter((node) => node.projectId === projectId),
-      }),
-      updateBinderNode: async (input) => {
-        const node = nodes.find((item) => item.id === input.nodeId);
-        if (node === undefined) {
-          return {
-            ok: false,
-            error: { code: "NOT_FOUND", message: "Binder node was not found." },
-          };
-        }
-        const updated: BinderNode = {
-          ...node,
-          ...(input.title === undefined ? {} : { title: input.title }),
-          ...(input.content === undefined ? {} : { content: input.content }),
-          ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-          updatedAt: now,
-        };
-        nodes[nodes.indexOf(node)] = updated;
-        return { ok: true, value: updated };
-      },
-      deleteBinderNode: async () => ({ ok: true, value: undefined }),
-      moveBinderNode: async (input) => {
-        const node = nodes.find((item) => item.id === input.nodeId);
-        if (node === undefined) {
-          return {
-            ok: false,
-            error: { code: "NOT_FOUND", message: "Binder node was not found." },
-          };
-        }
-        return {
-          ok: true,
-          value: {
-            ...node,
-            parentId: input.parentId,
-            position: input.position,
-          },
-        };
-      },
-    };
-
-    Object.defineProperty(window, "shakespeare", { value: api });
-  });
+  await installShakespeareMock(page);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Crear un proyecto" }).click();
@@ -131,8 +21,11 @@ test("creates projects, changes mode accessibly, and keeps manuscript content", 
     sectionNavigation.getByRole("button", { name: "Personajes" }),
   ).toHaveCount(0);
 
+  await page.getByRole("button", { name: "Nuevo" }).click();
   await page.getByLabel("Título").fill("Primera escena");
-  await page.getByRole("button", { name: "Añadir al manuscrito" }).click();
+  await page.getByLabel("Tipo").selectOption("scene");
+  await page.getByRole("button", { name: "Crear elemento" }).click();
+
   const content = page.getByRole("textbox", {
     name: "Contenido de Primera escena",
   });

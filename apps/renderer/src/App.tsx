@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { BinderNode, Project, ProjectMode } from "@shakespeare/shared";
+import {
+  BinderPanel,
+  ResizableSplitPane,
+  countBinderDescendants,
+  getBinderKindLabel,
+  isDocumentKind,
+} from "./features/binder/index.js";
+import { getErrorMessage, unwrapIpcResult } from "./lib/ipc-result.js";
 
 type WorkspaceSection = "writing" | "characters" | "places" | "plot";
 type DialogState =
@@ -11,26 +19,10 @@ const MODE_LABELS: Record<ProjectMode, string> = {
   simple: "Simple",
 };
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Ha ocurrido un error inesperado.";
-}
-
-function unwrapResult<T>(
-  result:
-    | { ok: true; value: T }
-    | { ok: false; error: { code: string; message: string } },
-): T {
-  if (!result.ok) {
-    throw new Error(`${result.error.message} (${result.error.code})`);
-  }
-  return result.value;
-}
-
-function getInitialNode(nodes: BinderNode[]): BinderNode | undefined {
-  return nodes.find(
-    (node) => node.kind === "scene" || node.kind === "document",
+function getInitialDocument(nodes: BinderNode[]): BinderNode | undefined {
+  return (
+    nodes.find((node) => node.kind === "scene" || node.kind === "document") ??
+    nodes.find((node) => isDocumentKind(node.kind))
   );
 }
 
@@ -47,8 +39,6 @@ export function App() {
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [newProjectMode, setNewProjectMode] = useState<ProjectMode>("simple");
-  const [nodeTitle, setNodeTitle] = useState("");
-  const [nodeKind, setNodeKind] = useState<"scene" | "document">("scene");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsMode, setSettingsMode] = useState<ProjectMode>("simple");
   const [section, setSection] = useState<WorkspaceSection>("writing");
@@ -58,13 +48,19 @@ export function App() {
   const [saving, setSaving] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
-  const writingNodes = nodes.filter(
-    (node) =>
-      node.kind === "folder" ||
-      node.kind === "scene" ||
-      node.kind === "document",
-  );
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const editorNode =
+    selectedNode !== null && isDocumentKind(selectedNode.kind)
+      ? selectedNode
+      : null;
+  const selectedFolderChildCount =
+    selectedNode?.kind === "folder"
+      ? nodes.filter((node) => node.parentId === selectedNode.id).length
+      : 0;
+  const selectedFolderDescendantCount =
+    selectedNode?.kind === "folder"
+      ? countBinderDescendants(nodes, selectedNode.id)
+      : 0;
 
   useEffect(() => {
     let active = true;
@@ -72,7 +68,7 @@ export function App() {
       .listProjects()
       .then((result) => {
         if (active) {
-          setProjects(unwrapResult(result));
+          setProjects(unwrapIpcResult(result));
         }
       })
       .catch((error: unknown) => {
@@ -89,6 +85,16 @@ export function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      selectedNodeId !== null &&
+      !nodes.some((node) => node.id === selectedNodeId)
+    ) {
+      setSelectedNodeId(null);
+      setDraftContent("");
+    }
+  }, [nodes, selectedNodeId]);
 
   useEffect(() => {
     const element = dialogRef.current;
@@ -111,7 +117,7 @@ export function App() {
     setErrorMessage(null);
     setSaving(true);
     try {
-      const created = unwrapResult(
+      const created = unwrapIpcResult(
         await window.shakespeare.createProject({
           name: projectName,
           mode: newProjectMode,
@@ -133,20 +139,20 @@ export function App() {
     }
   }
 
-  async function openProject(selectedProject: Project) {
+  async function openProject(nextProject: Project) {
     setErrorMessage(null);
     setLoading(true);
     try {
       const [loadedProject, loadedNodes] = await Promise.all([
-        window.shakespeare.getProject(selectedProject.id),
-        window.shakespeare.listBinderNodes(selectedProject.id),
+        window.shakespeare.getProject(nextProject.id),
+        window.shakespeare.listBinderNodes(nextProject.id),
       ]);
-      const persistedProject = unwrapResult(loadedProject);
+      const persistedProject = unwrapIpcResult(loadedProject);
       if (persistedProject === null) {
         throw new Error("No se encontró el proyecto seleccionado.");
       }
-      const projectNodes = unwrapResult(loadedNodes);
-      const initialNode = getInitialNode(projectNodes);
+      const projectNodes = unwrapIpcResult(loadedNodes);
+      const initialNode = getInitialDocument(projectNodes);
       setProject(persistedProject);
       setNodes(projectNodes);
       setSelectedNodeId(initialNode?.id ?? null);
@@ -161,46 +167,17 @@ export function App() {
     }
   }
 
-  async function createNode(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (project === null) {
-      return;
-    }
-    setErrorMessage(null);
-    setSaving(true);
-    try {
-      const created = unwrapResult(
-        await window.shakespeare.createBinderNode({
-          projectId: project.id,
-          parentId: null,
-          kind: nodeKind,
-          title: nodeTitle,
-          content: "",
-          metadata: {},
-        }),
-      );
-      setNodes((current) => [...current, created]);
-      setSelectedNodeId(created.id);
-      setDraftContent("");
-      setNodeTitle("");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function saveContent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selectedNode === undefined) {
+    if (editorNode === null) {
       return;
     }
     setErrorMessage(null);
     setSaving(true);
     try {
-      const updated = unwrapResult(
+      const updated = unwrapIpcResult(
         await window.shakespeare.updateBinderNode({
-          nodeId: selectedNode.id,
+          nodeId: editorNode.id,
           content: draftContent,
         }),
       );
@@ -221,7 +198,7 @@ export function App() {
     setErrorMessage(null);
     setSaving(true);
     try {
-      const updated = unwrapResult(
+      const updated = unwrapIpcResult(
         await window.shakespeare.updateProject({
           projectId: project.id,
           mode: dialog.mode,
@@ -245,14 +222,23 @@ export function App() {
     setProject(null);
     setNodes([]);
     setSelectedNodeId(null);
+    setDraftContent("");
     setSettingsOpen(false);
     setErrorMessage(null);
   }
 
-  function selectNode(node: BinderNode) {
-    setSelectedNodeId(node.id);
-    setDraftContent(node.content ?? "");
-    setSection("writing");
+  function handleBinderSelection(node: BinderNode | null) {
+    setSelectedNodeId(node?.id ?? null);
+    setDraftContent(
+      node !== null && isDocumentKind(node.kind) ? (node.content ?? "") : "",
+    );
+    if (node !== null) {
+      setSection("writing");
+    }
+  }
+
+  function handleNodesChange(nextNodes: BinderNode[]) {
+    setNodes(nextNodes);
   }
 
   const fictionSections: {
@@ -440,157 +426,146 @@ export function App() {
             </section>
           )}
 
-          <div className="workspace-layout">
-            <aside className="sidebar">
-              <nav className="section-nav" aria-label="Secciones del proyecto">
-                <button
-                  aria-current={section === "writing" ? "page" : undefined}
-                  className={
-                    section === "writing" ? "nav-item is-active" : "nav-item"
-                  }
-                  type="button"
-                  onClick={() => setSection("writing")}
+          <ResizableSplitPane
+            label="Ajustar el ancho del Binder"
+            primary={
+              <aside aria-label="Panel del proyecto" className="sidebar">
+                <nav
+                  className="section-nav"
+                  aria-label="Secciones del proyecto"
                 >
-                  Escritura
-                </button>
-                {project.mode === "fiction" &&
-                  fictionSections.map((item) => (
-                    <button
-                      aria-current={section === item.id ? "page" : undefined}
-                      className={
-                        section === item.id ? "nav-item is-active" : "nav-item"
-                      }
-                      key={item.id}
-                      type="button"
-                      onClick={() => setSection(item.id)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-              </nav>
-
-              {section === "writing" && (
-                <>
-                  <h2>Manuscrito</h2>
-                  {writingNodes.length > 0 ? (
-                    <ul className="binder-list" aria-label="Nodos del proyecto">
-                      {writingNodes.map((node) => (
-                        <li key={node.id}>
-                          {node.kind === "folder" ? (
-                            <span className="binder-folder">{node.title}</span>
-                          ) : (
-                            <button
-                              aria-current={
-                                selectedNodeId === node.id ? "page" : undefined
-                              }
-                              className={
-                                selectedNodeId === node.id
-                                  ? "binder-item is-active"
-                                  : "binder-item"
-                              }
-                              type="button"
-                              onClick={() => selectNode(node)}
-                            >
-                              {node.title}
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="sidebar-empty">Aún no hay escenas.</p>
-                  )}
-                  <form className="add-node-form" onSubmit={createNode}>
-                    <label>
-                      Título
-                      <input
-                        maxLength={200}
-                        required
-                        value={nodeTitle}
-                        onChange={(event) => setNodeTitle(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Tipo
-                      <select
-                        value={nodeKind}
-                        onChange={(event) => {
-                          if (
-                            event.target.value === "scene" ||
-                            event.target.value === "document"
-                          ) {
-                            setNodeKind(event.target.value);
-                          }
-                        }}
-                      >
-                        <option value="scene">Escena</option>
-                        <option value="document">Documento</option>
-                      </select>
-                    </label>
-                    <button
-                      className="secondary-button"
-                      disabled={saving}
-                      type="submit"
-                    >
-                      Añadir al manuscrito
-                    </button>
-                  </form>
-                </>
-              )}
-            </aside>
-
-            <div className="editor-area">
-              {section === "writing" ? (
-                selectedNode ? (
-                  <form className="editor" onSubmit={saveContent}>
-                    <label className="editor-title" htmlFor="node-content">
-                      {selectedNode.title}
-                    </label>
-                    <textarea
-                      id="node-content"
-                      aria-label={`Contenido de ${selectedNode.title}`}
-                      placeholder="Empieza a escribir aquí…"
-                      value={draftContent}
-                      onChange={(event) => setDraftContent(event.target.value)}
-                    />
-                    <div className="editor-footer">
-                      <span>
-                        {selectedNode.kind === "scene" ? "Escena" : "Documento"}
-                      </span>
+                  <button
+                    aria-current={section === "writing" ? "page" : undefined}
+                    className={
+                      section === "writing" ? "nav-item is-active" : "nav-item"
+                    }
+                    type="button"
+                    onClick={() => setSection("writing")}
+                  >
+                    Escritura
+                  </button>
+                  {project.mode === "fiction" &&
+                    fictionSections.map((item) => (
                       <button
-                        className="primary-button"
-                        disabled={
-                          saving ||
-                          draftContent === (selectedNode.content ?? "")
+                        aria-current={section === item.id ? "page" : undefined}
+                        className={
+                          section === item.id
+                            ? "nav-item is-active"
+                            : "nav-item"
                         }
-                        type="submit"
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSection(item.id)}
                       >
-                        {saving ? "Guardando…" : "Guardar"}
+                        {item.label}
                       </button>
+                    ))}
+                </nav>
+
+                <BinderPanel
+                  api={window.shakespeare}
+                  key={project.id}
+                  nodes={nodes}
+                  onNodesChange={handleNodesChange}
+                  onSelectionChange={handleBinderSelection}
+                  projectId={project.id}
+                  projectMode={project.mode}
+                  selectedNodeId={selectedNodeId}
+                />
+              </aside>
+            }
+            primaryId="binder-panel"
+            secondary={
+              <div className="editor-area">
+                {section === "writing" ? (
+                  editorNode !== null ? (
+                    <form className="editor" onSubmit={saveContent}>
+                      <div className="editor-heading">
+                        <label className="editor-title" htmlFor="node-content">
+                          {editorNode.title}
+                        </label>
+                        <span className="mode-badge">
+                          {getBinderKindLabel(editorNode.kind)}
+                        </span>
+                      </div>
+                      <textarea
+                        id="node-content"
+                        aria-label={`Contenido de ${editorNode.title}`}
+                        placeholder="Empieza a escribir aquí…"
+                        value={draftContent}
+                        onChange={(event) =>
+                          setDraftContent(event.target.value)
+                        }
+                      />
+                      <div className="editor-footer">
+                        <span>
+                          {getBinderKindLabel(editorNode.kind)} ·{" "}
+                          {draftContent.trim().length === 0
+                            ? "Sin contenido"
+                            : `${draftContent.trim().split(/\s+/).length} palabras`}
+                        </span>
+                        <button
+                          className="primary-button"
+                          disabled={
+                            saving ||
+                            draftContent === (editorNode.content ?? "")
+                          }
+                          type="submit"
+                        >
+                          {saving ? "Guardando…" : "Guardar"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : selectedNode?.kind === "folder" ? (
+                    <section
+                      aria-labelledby="folder-overview-title"
+                      className="folder-overview"
+                    >
+                      <p className="eyebrow">Carpeta</p>
+                      <h2 id="folder-overview-title">{selectedNode.title}</h2>
+                      <p>
+                        Esta carpeta organiza el Binder y no se edita como un
+                        documento. Selecciona una escena, un documento o un
+                        elemento de investigación para abrirlo en el editor.
+                      </p>
+                      <dl className="folder-stats">
+                        <div>
+                          <dt>Elementos directos</dt>
+                          <dd>{selectedFolderChildCount}</dd>
+                        </div>
+                        <div>
+                          <dt>Descendientes</dt>
+                          <dd>{selectedFolderDescendantCount}</dd>
+                        </div>
+                      </dl>
+                    </section>
+                  ) : (
+                    <div className="empty-editor">
+                      <h2>Tu manuscrito empieza aquí</h2>
+                      <p>
+                        Crea una carpeta, una escena o un documento desde el
+                        Binder para comenzar a escribir.
+                      </p>
                     </div>
-                  </form>
+                  )
                 ) : (
-                  <div className="empty-editor">
-                    <h2>Tu manuscrito empieza aquí</h2>
+                  <section className="coming-soon" aria-live="polite">
+                    <p className="eyebrow">Organización de ficción</p>
+                    <h2>
+                      {
+                        fictionSections.find((item) => item.id === section)
+                          ?.label
+                      }
+                    </h2>
                     <p>
-                      Añade una escena o un documento para comenzar a escribir.
+                      Esta sección estará disponible próximamente. Tu manuscrito
+                      y su contenido siguen intactos.
                     </p>
-                  </div>
-                )
-              ) : (
-                <section className="coming-soon" aria-live="polite">
-                  <p className="eyebrow">Organización de ficción</p>
-                  <h2>
-                    {fictionSections.find((item) => item.id === section)?.label}
-                  </h2>
-                  <p>
-                    Esta sección estará disponible próximamente. Tu manuscrito y
-                    su contenido siguen intactos.
-                  </p>
-                </section>
-              )}
-            </div>
-          </div>
+                  </section>
+                )}
+              </div>
+            }
+          />
         </section>
       )}
 
