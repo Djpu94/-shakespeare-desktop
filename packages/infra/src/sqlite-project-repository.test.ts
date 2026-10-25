@@ -222,6 +222,192 @@ describe("SQLite project and binder repositories", () => {
     expect(binderNodeRepository.findById(scene.id)).toBeUndefined();
   });
 
+  it("compacts the remaining sibling positions after deleting a node", () => {
+    const { projectRepository, binderNodeRepository } = createRepositories();
+    const project = projectRepository.create({
+      name: "Compaction",
+      mode: "simple",
+    });
+    const first = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "First",
+      content: "",
+      metadata: {},
+    });
+    const deleted = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "Deleted",
+      content: "",
+      metadata: {},
+    });
+    const third = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "Third",
+      content: "",
+      metadata: {},
+    });
+
+    binderNodeRepository.delete(deleted.id);
+
+    expect(
+      binderNodeRepository
+        .findByProjectId(project.id)
+        .map(({ id, position }) => [id, position]),
+    ).toEqual([
+      [first.id, 0],
+      [third.id, 1],
+    ]);
+    expect(() =>
+      binderNodeRepository.move({
+        nodeId: first.id,
+        parentId: third.id,
+        position: 0,
+      }),
+    ).toThrowError(ApplicationError);
+  });
+
+  it("appends after the highest sibling position when a legacy gap exists", () => {
+    const { database, projectRepository, binderNodeRepository } =
+      createRepositories();
+    const project = projectRepository.create({
+      name: "Legacy gap",
+      mode: "simple",
+    });
+    const first = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "First",
+      content: "",
+      metadata: {},
+    });
+    const second = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "Second",
+      content: "",
+      metadata: {},
+    });
+    database
+      .prepare("UPDATE binder_nodes SET sort_order = 7 WHERE id = ?")
+      .run(second.id);
+
+    const third = binderNodeRepository.create({
+      projectId: project.id,
+      parentId: null,
+      kind: "scene",
+      title: "Third",
+      content: "",
+      metadata: {},
+    });
+
+    expect(third.position).toBe(8);
+    expect(
+      binderNodeRepository
+        .findByProjectId(project.id)
+        .map(({ id, position }) => [id, position]),
+    ).toEqual([
+      [first.id, 0],
+      [second.id, 7],
+      [third.id, 8],
+    ]);
+  });
+
+  it("persists moves, renames, and deletions across a database reopen", () => {
+    const directory = mkdtempSync(join(tmpdir(), "shakespeare-binder-"));
+    const databasePath = join(directory, "binder.db");
+    let database: Database.Database | undefined;
+
+    try {
+      database = new Database(databasePath);
+      migrateDatabase(database);
+      const projectRepository = new SqliteProjectRepository(database);
+      const binderNodeRepository = new SqliteBinderNodeRepository(database);
+      const project = projectRepository.create({
+        name: "Persisted binder",
+        mode: "fiction",
+      });
+      const chapter = binderNodeRepository.create({
+        projectId: project.id,
+        parentId: null,
+        kind: "folder",
+        title: "Chapter",
+        content: null,
+        metadata: {},
+      });
+      const opening = binderNodeRepository.create({
+        projectId: project.id,
+        parentId: chapter.id,
+        kind: "scene",
+        title: "Opening",
+        content: "First line.",
+        metadata: {},
+      });
+      const finale = binderNodeRepository.create({
+        projectId: project.id,
+        parentId: null,
+        kind: "scene",
+        title: "Finale",
+        content: "Last line.",
+        metadata: {},
+      });
+
+      binderNodeRepository.move({
+        nodeId: finale.id,
+        parentId: chapter.id,
+        position: 1,
+      });
+      const renamed = binderNodeRepository.update({
+        nodeId: opening.id,
+        title: "Opening (revised)",
+      });
+      const removed = binderNodeRepository.create({
+        projectId: project.id,
+        parentId: chapter.id,
+        kind: "scene",
+        title: "Remove me",
+        content: "",
+        metadata: {},
+      });
+      binderNodeRepository.delete(removed.id);
+
+      database.close();
+      database = new Database(databasePath);
+      migrateDatabase(database);
+      const reopenedProjectRepository = new SqliteProjectRepository(database);
+      const reopenedBinderRepository = new SqliteBinderNodeRepository(database);
+
+      expect(reopenedProjectRepository.findById(project.id)?.name).toBe(
+        "Persisted binder",
+      );
+      expect(reopenedBinderRepository.findById(removed.id)).toBeUndefined();
+      expect(reopenedBinderRepository.findById(opening.id)?.title).toBe(
+        renamed.title,
+      );
+      expect(
+        reopenedBinderRepository
+          .findByProjectId(project.id)
+          .map(({ id, parentId, position }) => [id, parentId, position]),
+      ).toEqual([
+        [chapter.id, null, 0],
+        [opening.id, chapter.id, 0],
+        [finale.id, chapter.id, 1],
+      ]);
+    } finally {
+      if (database?.open) {
+        database.close();
+      }
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("moves nodes while maintaining contiguous stable sibling positions", () => {
     const { projectRepository, binderNodeRepository } = createRepositories();
     const project = projectRepository.create({
