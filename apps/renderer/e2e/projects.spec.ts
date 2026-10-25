@@ -30,7 +30,8 @@ test("creates projects, changes mode accessibly, and keeps manuscript content", 
     name: "Contenido de Primera escena",
   });
   await content.fill("Conservo este texto al cambiar de modo.");
-  await page.getByRole("button", { name: "Guardar" }).click();
+  await page.getByRole("button", { name: "Guardar ahora" }).click();
+  await expect(page.locator(".editor-save-status")).toContainText("Guardado");
 
   await page.getByRole("button", { name: "Ajustes" }).click();
   await page.getByLabel("Modo de escritura").selectOption("fiction");
@@ -74,5 +75,5 @@ test("creates projects, changes mode accessibly, and keeps manuscript content", 
   await page.getByRole("button", { name: "Abrir Mi novela" }).click();
   await expect(
     page.getByRole("textbox", { name: "Contenido de Primera escena" }),
-  ).toHaveValue("Conservo este texto al cambiar de modo.");
+  ).toContainText("Conservo este texto al cambiar de modo.");
 });

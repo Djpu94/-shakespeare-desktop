@@ -4,6 +4,18 @@ import type { BinderNode, Project } from "@shakespeare/shared";
 export const SHAKESPEARE_MOCK_STORAGE_KEY = "shakespeare.e2e.state.v1";
 export const SHAKESPEARE_MOCK_FAIL_NEXT_MOVE_KEY =
   "shakespeare.e2e.fail-next-move";
+export const SHAKESPEARE_MOCK_FAIL_NEXT_CONTENT_SAVE_KEY =
+  "shakespeare.e2e.fail-next-content-save";
+export const SHAKESPEARE_MOCK_CONTENT_SAVE_DELAY_KEY =
+  "shakespeare.e2e.content-save-delay";
+export const SHAKESPEARE_MOCK_WRITE_LOG_KEY = "shakespeare.e2e.write-log";
+
+export interface ShakespeareMockContentWrite {
+  readonly nodeId: string;
+  readonly content: string;
+  readonly ok: boolean;
+  readonly at: string;
+}
 
 export interface ShakespeareMockSeed {
   projects?: Project[];
@@ -20,7 +32,15 @@ export async function installShakespeareMock(
   seed: ShakespeareMockSeed = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ storageKey, failNextMoveKey, seedProjects, seedNodes }) => {
+    ({
+      storageKey,
+      failNextMoveKey,
+      failNextContentSaveKey,
+      contentSaveDelayKey,
+      writeLogKey,
+      seedProjects,
+      seedNodes,
+    }) => {
       interface MockProject {
         id: string;
         name: string;
@@ -59,8 +79,42 @@ export async function installShakespeareMock(
         error: { code: string; message: string };
       }
 
+      interface MockContentWrite {
+        nodeId: string;
+        content: string;
+        ok: boolean;
+        at: string;
+      }
+
       function now(): string {
         return new Date().toISOString();
+      }
+
+      function readWriteLog(): MockContentWrite[] {
+        const raw = localStorage.getItem(writeLogKey);
+        if (raw === null) {
+          return [];
+        }
+        try {
+          return JSON.parse(raw) as MockContentWrite[];
+        } catch {
+          return [];
+        }
+      }
+
+      function appendWriteLog(entry: MockContentWrite): void {
+        const log = readWriteLog();
+        log.push(entry);
+        localStorage.setItem(writeLogKey, JSON.stringify(log));
+      }
+
+      function readSaveDelay(): number {
+        const raw = localStorage.getItem(contentSaveDelayKey);
+        if (raw === null) {
+          return 0;
+        }
+        const delay = Number(raw);
+        return Number.isFinite(delay) && delay > 0 ? delay : 0;
       }
 
       function readState(): MockState {
@@ -292,6 +346,11 @@ export async function installShakespeareMock(
           content?: string | null;
           metadata?: Record<string, unknown>;
         }) => {
+          const delay = readSaveDelay();
+          if (delay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
           const state = readState();
           const node = state.nodes.find(
             (candidate) => candidate.id === input.nodeId,
@@ -305,6 +364,19 @@ export async function installShakespeareMock(
               "Folders cannot contain document text.",
             );
           }
+          if (
+            input.content !== undefined &&
+            localStorage.getItem(failNextContentSaveKey) === "1"
+          ) {
+            localStorage.removeItem(failNextContentSaveKey);
+            appendWriteLog({
+              nodeId: input.nodeId,
+              content: input.content,
+              ok: false,
+              at: now(),
+            });
+            return fail("INTERNAL_ERROR", "Forced content save failure.");
+          }
           if (input.title !== undefined) {
             node.title = input.title.trim();
           }
@@ -316,6 +388,40 @@ export async function installShakespeareMock(
           }
           node.updatedAt = now();
           writeState(state);
+          if (input.content !== undefined) {
+            appendWriteLog({
+              nodeId: input.nodeId,
+              content: input.content,
+              ok: true,
+              at: now(),
+            });
+          }
+          return ok({ ...node });
+        },
+
+        flushBinderContent: (input: { nodeId: string; content: string }) => {
+          const state = readState();
+          const node = state.nodes.find(
+            (candidate) => candidate.id === input.nodeId,
+          );
+          if (node === undefined) {
+            return fail("NOT_FOUND", "Binder node was not found.");
+          }
+          if (node.kind === "folder") {
+            return fail(
+              "INVALID_OPERATION",
+              "Folders cannot contain document text.",
+            );
+          }
+          node.content = input.content;
+          node.updatedAt = now();
+          writeState(state);
+          appendWriteLog({
+            nodeId: input.nodeId,
+            content: input.content,
+            ok: true,
+            at: now(),
+          });
           return ok({ ...node });
         },
 
@@ -425,6 +531,9 @@ export async function installShakespeareMock(
     {
       storageKey: SHAKESPEARE_MOCK_STORAGE_KEY,
       failNextMoveKey: SHAKESPEARE_MOCK_FAIL_NEXT_MOVE_KEY,
+      failNextContentSaveKey: SHAKESPEARE_MOCK_FAIL_NEXT_CONTENT_SAVE_KEY,
+      contentSaveDelayKey: SHAKESPEARE_MOCK_CONTENT_SAVE_DELAY_KEY,
+      writeLogKey: SHAKESPEARE_MOCK_WRITE_LOG_KEY,
       seedProjects: seed.projects ?? [],
       seedNodes: seed.nodes ?? [],
     },
@@ -435,5 +544,55 @@ export async function failNextBinderMove(page: Page): Promise<void> {
   await page.evaluate(
     (key) => localStorage.setItem(key, "1"),
     SHAKESPEARE_MOCK_FAIL_NEXT_MOVE_KEY,
+  );
+}
+
+export async function failNextContentSave(page: Page): Promise<void> {
+  await page.evaluate(
+    (key) => localStorage.setItem(key, "1"),
+    SHAKESPEARE_MOCK_FAIL_NEXT_CONTENT_SAVE_KEY,
+  );
+}
+
+export async function setContentSaveDelay(
+  page: Page,
+  delayMs: number,
+): Promise<void> {
+  await page.evaluate(
+    ({ key, value }) => localStorage.setItem(key, String(value)),
+    { key: SHAKESPEARE_MOCK_CONTENT_SAVE_DELAY_KEY, value: delayMs },
+  );
+}
+
+export async function getContentSaveWrites(
+  page: Page,
+): Promise<ShakespeareMockContentWrite[]> {
+  return page.evaluate((key) => {
+    const raw = localStorage.getItem(key);
+    if (raw === null) {
+      return [];
+    }
+    try {
+      return JSON.parse(raw) as ShakespeareMockContentWrite[];
+    } catch {
+      return [];
+    }
+  }, SHAKESPEARE_MOCK_WRITE_LOG_KEY);
+}
+
+export async function getPersistedBinderNode(
+  page: Page,
+  nodeId: string,
+): Promise<BinderNode | null> {
+  return page.evaluate(
+    ({ storageKey, id }) => {
+      const raw = localStorage.getItem(storageKey);
+      if (raw === null) {
+        return null;
+      }
+      const state = JSON.parse(raw) as { nodes: BinderNode[] };
+      return state.nodes.find((node) => node.id === id) ?? null;
+    },
+    { storageKey: SHAKESPEARE_MOCK_STORAGE_KEY, id: nodeId },
   );
 }

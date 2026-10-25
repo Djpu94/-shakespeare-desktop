@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  BinderContentStringSchema,
+  BinderNodeIdSchema,
   BinderNodeSchema,
   type BinderNode,
   type CreateBinderNodeInput,
@@ -26,6 +28,7 @@ export const IPC_CHANNELS = {
   updateBinderNode: "binder-node:update",
   deleteBinderNode: "binder-node:delete",
   moveBinderNode: "binder-node:move",
+  flushBinderContent: "binder-node:flush-content",
 } as const;
 
 export const AppHealthRequestSchema = z.object({}).strict();
@@ -63,12 +66,21 @@ export const ProjectIdRequestSchema = z
 export const BinderNodeIdRequestSchema = z
   .object({ nodeId: z.uuid() })
   .strict();
+export const FlushBinderContentRequestSchema = z
+  .object({
+    nodeId: BinderNodeIdSchema,
+    content: BinderContentStringSchema,
+  })
+  .strict();
 export const ProjectListSchema = z.array(ProjectSchema);
 export const BinderNodeListSchema = z.array(BinderNodeSchema);
 export const VoidResponseSchema = z.void();
 
 export type AppHealthResponse = z.infer<typeof AppHealthResponseSchema>;
 export type ApplicationError = z.infer<typeof ApplicationErrorSchema>;
+export type FlushBinderContentInput = z.infer<
+  typeof FlushBinderContentRequestSchema
+>;
 
 export interface ShakespeareApi {
   getAppHealth(): Promise<IpcResult<AppHealthResponse>>;
@@ -86,4 +98,10 @@ export interface ShakespeareApi {
   ): Promise<IpcResult<BinderNode>>;
   deleteBinderNode(nodeId: string): Promise<IpcResult<void>>;
   moveBinderNode(input: MoveBinderNodeInput): Promise<IpcResult<BinderNode>>;
+  /**
+   * Synchronous last-resort flush used by the renderer `beforeunload` handler.
+   * SQLite writes are synchronous in the main process, so this guarantees the
+   * pending document is persisted before the window is destroyed.
+   */
+  flushBinderContent(input: FlushBinderContentInput): IpcResult<BinderNode>;
 }

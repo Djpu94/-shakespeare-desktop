@@ -4,6 +4,10 @@ import {
   CreateBinderNodeSchema,
   UpdateBinderNodeSchema,
 } from "./binder-node.schema.js";
+import {
+  createEmptyRichTextDocument,
+  serializeRichTextContent,
+} from "./rich-text.schema.js";
 
 describe("project and binder contracts", () => {
   it("validates project creation and rejects empty updates", () => {
@@ -32,7 +36,7 @@ describe("project and binder contracts", () => {
       parentId: null,
       kind: "scene",
       title: "Opening",
-      content: "Text",
+      content: serializeRichTextContent(createEmptyRichTextDocument()),
       metadata: { tags: ["draft"] },
     };
     expect(CreateBinderNodeSchema.parse(validNode)).toMatchObject(validNode);
@@ -47,6 +51,12 @@ describe("project and binder contracts", () => {
       CreateBinderNodeSchema.parse({
         ...validNode,
         metadata: { invalid: BigInt(1) },
+      }),
+    ).toThrow();
+    expect(() =>
+      CreateBinderNodeSchema.parse({
+        ...validNode,
+        content: "<p>Unsafe HTML</p>",
       }),
     ).toThrow();
     expect(() =>

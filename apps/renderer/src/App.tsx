@@ -1,13 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { BinderNode, Project, ProjectMode } from "@shakespeare/shared";
 import {
   BinderPanel,
   ResizableSplitPane,
   countBinderDescendants,
-  getBinderKindLabel,
   isDocumentKind,
 } from "./features/binder/index.js";
+import {
+  EditorPanel,
+  EditorPreferenceStore,
+  ScriveningsPane,
+  collectScriveningsDocuments,
+  useEditorPreferences,
+  useEditorWorkspace,
+  type ScriveningsHandle,
+} from "./features/editor/index.js";
 import { getErrorMessage, unwrapIpcResult } from "./lib/ipc-result.js";
 
 type WorkspaceSection = "writing" | "characters" | "places" | "plot";
@@ -35,7 +43,9 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [nodes, setNodes] = useState<BinderNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [draftContent, setDraftContent] = useState("");
+  const [scriveningsFolderId, setScriveningsFolderId] = useState<string | null>(
+    null,
+  );
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [newProjectMode, setNewProjectMode] = useState<ProjectMode>("simple");
@@ -47,12 +57,36 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const scriveningsRef = useRef<ScriveningsHandle>(null);
+
+  const preferenceStore = useMemo(
+    () => new EditorPreferenceStore(window.localStorage),
+    [],
+  );
+  const [editorPreferences, updateEditorPreferences] = useEditorPreferences(
+    project?.id ?? null,
+    preferenceStore,
+  );
+
+  const editor = useEditorWorkspace({
+    api: window.shakespeare,
+    onNodeUpdated: (updated) => {
+      setNodes((current) =>
+        current.map((node) => (node.id === updated.id ? updated : node)),
+      );
+    },
+  });
+
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+  const scriveningsFolderIdRef = useRef(scriveningsFolderId);
+  scriveningsFolderIdRef.current = scriveningsFolderId;
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const editorNode =
-    selectedNode !== null && isDocumentKind(selectedNode.kind)
-      ? selectedNode
-      : null;
+    editor.activeNodeId === null
+      ? null
+      : (nodes.find((node) => node.id === editor.activeNodeId) ?? null);
   const selectedFolderChildCount =
     selectedNode?.kind === "folder"
       ? nodes.filter((node) => node.parentId === selectedNode.id).length
@@ -60,6 +94,10 @@ export function App() {
   const selectedFolderDescendantCount =
     selectedNode?.kind === "folder"
       ? countBinderDescendants(nodes, selectedNode.id)
+      : 0;
+  const selectedFolderDocumentCount =
+    selectedNode?.kind === "folder"
+      ? collectScriveningsDocuments(nodes, selectedNode.id).length
       : 0;
 
   useEffect(() => {
@@ -91,8 +129,9 @@ export function App() {
       selectedNodeId !== null &&
       !nodes.some((node) => node.id === selectedNodeId)
     ) {
+      editorRef.current.discard();
       setSelectedNodeId(null);
-      setDraftContent("");
+      setScriveningsFolderId(null);
     }
   }, [nodes, selectedNodeId]);
 
@@ -112,6 +151,55 @@ export function App() {
     }
   }, [dialog]);
 
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent): void {
+      const editorFlushed = editorRef.current.flushForClose();
+      const scriveningsFlushed =
+        scriveningsRef.current?.flushForClose() ?? true;
+      if (!editorFlushed || !scriveningsFlushed) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    }
+
+    function flushHiddenDocument(): void {
+      if (document.visibilityState !== "hidden") {
+        return;
+      }
+      void editorRef.current.saveNow();
+      void scriveningsRef.current?.flush();
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", flushHiddenDocument);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", flushHiddenDocument);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleSaveShortcut(event: KeyboardEvent): void {
+      const isSave =
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "s";
+      if (!isSave) {
+        return;
+      }
+      event.preventDefault();
+      if (scriveningsFolderIdRef.current !== null) {
+        void scriveningsRef.current?.flush();
+      } else {
+        void editorRef.current.saveNow();
+      }
+    }
+
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, []);
+
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
@@ -127,7 +215,7 @@ export function App() {
       setProject(created);
       setNodes([]);
       setSelectedNodeId(null);
-      setDraftContent("");
+      setScriveningsFolderId(null);
       setSettingsMode(created.mode);
       setSection("writing");
       setCreateProjectOpen(false);
@@ -143,6 +231,16 @@ export function App() {
     setErrorMessage(null);
     setLoading(true);
     try {
+      if (
+        scriveningsFolderId !== null &&
+        !(await (scriveningsRef.current?.flush() ?? Promise.resolve(true)))
+      ) {
+        return;
+      }
+      if (!(await editor.close())) {
+        return;
+      }
+
       const [loadedProject, loadedNodes] = await Promise.all([
         window.shakespeare.getProject(nextProject.id),
         window.shakespeare.listBinderNodes(nextProject.id),
@@ -155,11 +253,16 @@ export function App() {
       const initialNode = getInitialDocument(projectNodes);
       setProject(persistedProject);
       setNodes(projectNodes);
-      setSelectedNodeId(initialNode?.id ?? null);
-      setDraftContent(initialNode?.content ?? "");
+      setSelectedNodeId(null);
+      setScriveningsFolderId(null);
       setSettingsMode(persistedProject.mode);
       setSettingsOpen(false);
       setSection("writing");
+
+      if (initialNode !== undefined) {
+        const opened = await editor.open(initialNode);
+        setSelectedNodeId(opened ? initialNode.id : null);
+      }
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -167,28 +270,24 @@ export function App() {
     }
   }
 
-  async function saveContent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (editorNode === null) {
+  async function returnToProjects() {
+    setErrorMessage(null);
+    if (
+      scriveningsFolderId !== null &&
+      !(await (scriveningsRef.current?.flush() ?? Promise.resolve(true)))
+    ) {
       return;
     }
-    setErrorMessage(null);
-    setSaving(true);
-    try {
-      const updated = unwrapIpcResult(
-        await window.shakespeare.updateBinderNode({
-          nodeId: editorNode.id,
-          content: draftContent,
-        }),
-      );
-      setNodes((current) =>
-        current.map((node) => (node.id === updated.id ? updated : node)),
-      );
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setSaving(false);
+    if (!(await editor.close())) {
+      return;
     }
+
+    setProject(null);
+    setNodes([]);
+    setSelectedNodeId(null);
+    setScriveningsFolderId(null);
+    setSettingsOpen(false);
+    setErrorMessage(null);
   }
 
   async function confirmModeChange() {
@@ -218,20 +317,40 @@ export function App() {
     }
   }
 
-  function returnToProjects() {
-    setProject(null);
-    setNodes([]);
-    setSelectedNodeId(null);
-    setDraftContent("");
-    setSettingsOpen(false);
-    setErrorMessage(null);
-  }
+  async function handleBinderSelection(node: BinderNode | null) {
+    if (scriveningsFolderId !== null && node?.id !== scriveningsFolderId) {
+      const flushed = await (scriveningsRef.current?.flush() ??
+        Promise.resolve(true));
+      if (!flushed) {
+        return;
+      }
+      setScriveningsFolderId(null);
+    }
 
-  function handleBinderSelection(node: BinderNode | null) {
+    if (
+      node !== null &&
+      scriveningsFolderId === node.id &&
+      node.kind === "folder"
+    ) {
+      setSelectedNodeId(node.id);
+      setSection("writing");
+      return;
+    }
+
+    const nextDocument =
+      node !== null && isDocumentKind(node.kind) ? node : null;
+    if (
+      editor.activeNodeId !== null &&
+      !nodes.some((candidate) => candidate.id === editor.activeNodeId)
+    ) {
+      editor.discard();
+    }
+
+    if (!(await editor.open(nextDocument))) {
+      return;
+    }
+
     setSelectedNodeId(node?.id ?? null);
-    setDraftContent(
-      node !== null && isDocumentKind(node.kind) ? (node.content ?? "") : "",
-    );
     if (node !== null) {
       setSection("writing");
     }
@@ -239,6 +358,42 @@ export function App() {
 
   function handleNodesChange(nextNodes: BinderNode[]) {
     setNodes(nextNodes);
+  }
+
+  function handleEditorNodeUpdated(updated: BinderNode) {
+    setNodes((current) =>
+      current.map((node) => (node.id === updated.id ? updated : node)),
+    );
+  }
+
+  async function openScrivenings() {
+    if (selectedNode?.kind !== "folder") {
+      return;
+    }
+    if (!(await editor.close())) {
+      return;
+    }
+    setScriveningsFolderId(selectedNode.id);
+  }
+
+  async function changeSection(nextSection: WorkspaceSection) {
+    if (nextSection !== "writing" && scriveningsFolderId !== null) {
+      const flushed = await (scriveningsRef.current?.flush() ??
+        Promise.resolve(true));
+      if (!flushed) {
+        return;
+      }
+    }
+    setSection(nextSection);
+  }
+
+  async function closeScrivenings() {
+    const flushed = await (scriveningsRef.current?.flush() ??
+      Promise.resolve(true));
+    if (!flushed) {
+      return;
+    }
+    setScriveningsFolderId(null);
   }
 
   const fictionSections: {
@@ -367,7 +522,7 @@ export function App() {
             <button
               className="text-button"
               type="button"
-              onClick={returnToProjects}
+              onClick={() => void returnToProjects()}
             >
               ← Todos los proyectos
             </button>
@@ -440,7 +595,7 @@ export function App() {
                       section === "writing" ? "nav-item is-active" : "nav-item"
                     }
                     type="button"
-                    onClick={() => setSection("writing")}
+                    onClick={() => void changeSection("writing")}
                   >
                     Escritura
                   </button>
@@ -455,7 +610,7 @@ export function App() {
                         }
                         key={item.id}
                         type="button"
-                        onClick={() => setSection(item.id)}
+                        onClick={() => void changeSection(item.id)}
                       >
                         {item.label}
                       </button>
@@ -467,7 +622,9 @@ export function App() {
                   key={project.id}
                   nodes={nodes}
                   onNodesChange={handleNodesChange}
-                  onSelectionChange={handleBinderSelection}
+                  onSelectionChange={(node) => {
+                    void handleBinderSelection(node);
+                  }}
                   projectId={project.id}
                   projectMode={project.mode}
                   selectedNodeId={selectedNodeId}
@@ -478,75 +635,98 @@ export function App() {
             secondary={
               <div className="editor-area">
                 {section === "writing" ? (
-                  editorNode !== null ? (
-                    <form className="editor" onSubmit={saveContent}>
-                      <div className="editor-heading">
-                        <label className="editor-title" htmlFor="node-content">
-                          {editorNode.title}
-                        </label>
-                        <span className="mode-badge">
-                          {getBinderKindLabel(editorNode.kind)}
-                        </span>
-                      </div>
-                      <textarea
-                        id="node-content"
-                        aria-label={`Contenido de ${editorNode.title}`}
-                        placeholder="Empieza a escribir aquí…"
-                        value={draftContent}
-                        onChange={(event) =>
-                          setDraftContent(event.target.value)
-                        }
+                  selectedNode?.kind === "folder" ? (
+                    scriveningsFolderId === selectedNode.id ? (
+                      <ScriveningsPane
+                        api={window.shakespeare}
+                        folder={selectedNode}
+                        nodes={nodes}
+                        onClose={() => void closeScrivenings()}
+                        onNodeUpdated={handleEditorNodeUpdated}
+                        ref={scriveningsRef}
+                        zoom={editorPreferences.zoom}
                       />
-                      <div className="editor-footer">
-                        <span>
-                          {getBinderKindLabel(editorNode.kind)} ·{" "}
-                          {draftContent.trim().length === 0
-                            ? "Sin contenido"
-                            : `${draftContent.trim().split(/\s+/).length} palabras`}
-                        </span>
-                        <button
-                          className="primary-button"
-                          disabled={
-                            saving ||
-                            draftContent === (editorNode.content ?? "")
-                          }
-                          type="submit"
-                        >
-                          {saving ? "Guardando…" : "Guardar"}
-                        </button>
-                      </div>
-                    </form>
-                  ) : selectedNode?.kind === "folder" ? (
-                    <section
-                      aria-labelledby="folder-overview-title"
-                      className="folder-overview"
-                    >
-                      <p className="eyebrow">Carpeta</p>
-                      <h2 id="folder-overview-title">{selectedNode.title}</h2>
-                      <p>
-                        Esta carpeta organiza el Binder y no se edita como un
-                        documento. Selecciona una escena, un documento o un
-                        elemento de investigación para abrirlo en el editor.
-                      </p>
-                      <dl className="folder-stats">
-                        <div>
-                          <dt>Elementos directos</dt>
-                          <dd>{selectedFolderChildCount}</dd>
+                    ) : (
+                      <section
+                        aria-labelledby="folder-overview-title"
+                        className="folder-overview"
+                      >
+                        <p className="eyebrow">Carpeta</p>
+                        <h2 id="folder-overview-title">{selectedNode.title}</h2>
+                        <p>
+                          Esta carpeta organiza el Binder y no se edita como un
+                          documento. Selecciona una escena, un documento o un
+                          elemento de investigación para abrirlo en el editor.
+                        </p>
+                        <dl className="folder-stats">
+                          <div>
+                            <dt>Elementos directos</dt>
+                            <dd>{selectedFolderChildCount}</dd>
+                          </div>
+                          <div>
+                            <dt>Descendientes</dt>
+                            <dd>{selectedFolderDescendantCount}</dd>
+                          </div>
+                          <div>
+                            <dt>Documentos en Scrivenings</dt>
+                            <dd>{selectedFolderDocumentCount}</dd>
+                          </div>
+                        </dl>
+                        <div className="folder-overview-actions">
+                          <button
+                            className="primary-button"
+                            disabled={selectedFolderDocumentCount === 0}
+                            onClick={() => void openScrivenings()}
+                            type="button"
+                          >
+                            Abrir Scrivenings
+                          </button>
+                          <p className="description">
+                            Lee y edita juntos los documentos de esta carpeta.
+                            Cada cambio se guarda en su documento original.
+                          </p>
                         </div>
-                        <div>
-                          <dt>Descendientes</dt>
-                          <dd>{selectedFolderDescendantCount}</dd>
-                        </div>
-                      </dl>
-                    </section>
+                      </section>
+                    )
+                  ) : editorNode !== null && editor.document !== null ? (
+                    <EditorPanel
+                      autosave={editor.autosave}
+                      document={editor.document}
+                      initialCursor={editor.getCursor(editorNode.id)}
+                      key={editorNode.id}
+                      node={editorNode}
+                      onChange={editor.update}
+                      onContentError={editor.reportContentError}
+                      onCursorChange={(cursor) =>
+                        editor.setCursor(editorNode.id, cursor)
+                      }
+                      onRetry={() => void editor.retry()}
+                      onSaveNow={() => void editor.saveNow()}
+                      onToggleToolbar={() =>
+                        updateEditorPreferences({
+                          toolbarVisible: !editorPreferences.toolbarVisible,
+                        })
+                      }
+                      onZoomChange={(zoom) => updateEditorPreferences({ zoom })}
+                      toolbarVisible={editorPreferences.toolbarVisible}
+                      workspaceError={editor.contentError}
+                      zoom={editorPreferences.zoom}
+                    />
                   ) : (
-                    <div className="empty-editor">
-                      <h2>Tu manuscrito empieza aquí</h2>
-                      <p>
-                        Crea una carpeta, una escena o un documento desde el
-                        Binder para comenzar a escribir.
-                      </p>
-                    </div>
+                    <>
+                      {editor.contentError !== null && (
+                        <p className="error-message" role="alert">
+                          {editor.contentError}
+                        </p>
+                      )}
+                      <div className="empty-editor">
+                        <h2>Tu manuscrito empieza aquí</h2>
+                        <p>
+                          Crea una carpeta, una escena o un documento desde el
+                          Binder para comenzar a escribir.
+                        </p>
+                      </div>
+                    </>
                   )
                 ) : (
                   <section className="coming-soon" aria-live="polite">
