@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Aplicación de escritorio para escribir y organizar proyectos.",
   "author": "Shakespeare",
+  "desktopName": "shakespeare.desktop",
   "main": "dist/main.js",
   "scripts": {
     "dev": "concurrently -k \"tsc -p tsconfig.json --watch\" \"wait-on dist/main.js && cross-env SHAKESPEARE_RENDERER_URL=http://127.0.0.1:5173 electron .\"",
@@ -38,6 +39,15 @@
       "dist/**/*",
       "package.json"
     ],
-    "asar": true
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "executableName": "shakespeare",
+      "category": "Office",
+      "icon": "build/icon.png",
+      "syncDesktopName": true
+    }
   }
 }
